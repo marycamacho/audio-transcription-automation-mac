@@ -2,6 +2,8 @@
 
 A shell script to automate the local transcription of audio files on macOS using the powerful `whisper.cpp` engine.
 
+Created with a little help from a general AI.
+
 ## Motivation
 
 This script was designed for my private use on a local computer. I wanted to avoid using third-party transcription tools or services that require uploading my recordings to external servers. I believe we should not share data with AIs or for-profit businesses unless we explicitly want them to perform a task that is impossible to do locally. This script provides a powerful, private, and offline alternative.

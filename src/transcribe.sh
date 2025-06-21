@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # --- 1. Define Folder Paths ---
 HOME_DIR="$HOME"
@@ -7,65 +7,51 @@ RECORDINGS_FOLDER="$DROPBOX_DIR/_recordings"
 TRANSCRIPTS_FOLDER="$RECORDINGS_FOLDER/transcripts"
 COMPLETED_FOLDER="$RECORDINGS_FOLDER/completed"
 NEW_ZOOM_FOLDER="$RECORDINGS_FOLDER/new-zoom"
+VOICE_MEMOS_FOLDER="$HOME_DIR/Library/Group Containers/group.com.apple.VoiceMemos.shared/Recordings"
 MODEL_PATH="$HOME_DIR/whisper-files/models/ggml-base.en.bin"
 
 
 # ===================================================================
-# == PART 1: PROCESS NEW ZOOM RECORDINGS (FINAL VERSION)
+# == PART 1: PROCESS NEW ZOOM RECORDINGS
 # ===================================================================
 echo "--- Checking for new Zoom recordings to process... ---"
-
-# Loop through each item in the 'new-zoom' folder
+# This part is already robust and handles spaces correctly.
 for ZOOM_SUBFOLDER in "$NEW_ZOOM_FOLDER"/*; do
-    # Check if it's actually a directory
     if [ -d "$ZOOM_SUBFOLDER" ]; then
-        
         FOLDER_NAME=$(basename "$ZOOM_SUBFOLDER")
-
-        # Check if the folder name does NOT start with a number
         if [[ ! "$FOLDER_NAME" =~ ^[0-9] ]]; then
             echo "----------------------------------------------------"
             echo "Found named folder to process: '$FOLDER_NAME'"
-
             VALID_FILES=($(find "$ZOOM_SUBFOLDER" -maxdepth 1 \( -name "*.m4a" -o -name "*.mp3" \) -size +0c))
             EXPECTED_COUNT=${#VALID_FILES[@]}
             SUCCESS_COUNT=0
-
             if [ "$EXPECTED_COUNT" -gt 0 ]; then
                 echo "  Found $EXPECTED_COUNT audio file(s) to process."
-
                 PART_COUNT=1
-
-                # Loop through only the valid audio files
                 for AUDIO_FILE in "${VALID_FILES[@]}"; do
                     BASENAME="${AUDIO_FILE##*/}"
                     UNIQUE_FILENAME_BASE="${FOLDER_NAME}-${PART_COUNT}"
                     TEMP_WAV_FILE="$RECORDINGS_FOLDER/$UNIQUE_FILENAME_BASE-$(date +%s).wav"
-
                     echo "  --> Processing: $BASENAME"
                     echo "    > Step A: Converting to compatible WAV format..."
                     if ffmpeg -i "$AUDIO_FILE" -ar 16000 -ac 1 -c:a pcm_s16le "$TEMP_WAV_FILE" -hide_banner -loglevel error; then
-                        
                         echo "    > Step B: Transcribing WAV..."
                         if whisper-cli -m "$MODEL_PATH" -f "$TEMP_WAV_FILE" -otxt -of "$TRANSCRIPTS_FOLDER/$UNIQUE_FILENAME_BASE"; then
                             SUCCESS_COUNT=$((SUCCESS_COUNT + 1))
-                            echo "    > SUCCESS: Transcription complete for '$BASENAME'."
+                            mv "$AUDIO_FILE" "$COMPLETED_FOLDER/"
+                            echo "    > SUCCESS: Transcription complete. Original audio '$BASENAME' moved to completed."
                         else
                             echo "    !!! ERROR: Transcription failed for '$BASENAME'. !!!"
                         fi
-
                         rm "$TEMP_WAV_FILE"
                     else
                         echo "    !!! ERROR: Failed to convert '$BASENAME'. It may be corrupt. !!!"
                     fi
-
                     PART_COUNT=$((PART_COUNT + 1))
                 done
             else
                 echo "  ! No valid (non-empty) audio files found in '$FOLDER_NAME'. Skipping."
             fi
-
-            # Final check for completeness
             if [ "$EXPECTED_COUNT" -gt 0 ] && [ "$EXPECTED_COUNT" -eq "$SUCCESS_COUNT" ]; then
                 echo "  > All $SUCCESS_COUNT audio file(s) processed successfully. Moving original Zoom folder to completed."
                 mv "$ZOOM_SUBFOLDER" "$COMPLETED_FOLDER/"
@@ -76,21 +62,20 @@ for ZOOM_SUBFOLDER in "$NEW_ZOOM_FOLDER"/*; do
         fi
     fi
 done
-echo "--- Zoom processing complete. Starting main transcription batch for loose files. ---"
+echo "--- Zoom processing complete. ---"
 
 
 # ===================================================================
-# == PART 2: PROCESS LOOSE FILES IN _RECORDINGS
+# == PART 2: PROCESS LOOSE FILES IN _RECORDINGS (FIXED FOR SPACES)
 # ===================================================================
-for AUDIO_FILE in "$RECORDINGS_FOLDER"/*.m4a "$RECORDINGS_FOLDER"/*.mp3; do
-  if [ -f "$AUDIO_FILE" ]; then
+echo "--- Checking for loose files in _recordings... ---"
+# --- FIX: Use 'find' and a 'while' loop to correctly handle filenames with spaces ---
+find "$RECORDINGS_FOLDER" -maxdepth 1 \( -name "*.m4a" -o -name "*.mp3" \) -type f -print0 | while read -r -d $'\0' AUDIO_FILE; do
     echo "----------------------------------------------------"
     echo "Transcribing loose file: ${AUDIO_FILE##*/}"
-
     BASENAME="${AUDIO_FILE##*/}"
     FILENAME_NO_EXT="${BASENAME%.*}"
     TEMP_WAV_FILE="$RECORDINGS_FOLDER/$FILENAME_NO_EXT.wav"
-
     echo "  --> Step A: Converting to compatible WAV format..."
     if ffmpeg -i "$AUDIO_FILE" -ar 16000 -ac 1 -c:a pcm_s16le "$TEMP_WAV_FILE" -hide_banner -loglevel error; then
         echo "  --> Step B: Transcribing WAV..."
@@ -106,7 +91,55 @@ for AUDIO_FILE in "$RECORDINGS_FOLDER"/*.m4a "$RECORDINGS_FOLDER"/*.mp3; do
     else
         echo "  !!! ERROR: Failed to convert '$BASENAME'. Skipping this file. It may be corrupt or empty. !!!"
     fi
-  fi
 done
-echo "----------------------------------------------------"
-echo "Batch process complete."
+echo "--- Loose file processing complete. ---"
+
+
+# ===================================================================
+# == PART 3: PROCESS NEW VOICE MEMOS (FIXED FOR SPACES & COMPATIBILITY)
+# ===================================================================
+echo "--- Checking for new Voice Memos... ---"
+
+if [ ! -d "$VOICE_MEMOS_FOLDER" ]; then
+    echo "!!! ERROR: Voice Memos directory not found at '$VOICE_MEMOS_FOLDER'. Skipping this step. !!!"
+else
+    # --- FIX: Replace 'mapfile' with a more compatible 'find' and 'while' loop ---
+    # This also correctly handles filenames with spaces.
+    find "$VOICE_MEMOS_FOLDER" -maxdepth 1 -name "*.m4a" -size +0c -print0 | while read -r -d $'\0' AUDIO_FILE; do
+        # Initialize counter inside the loop if you want it to reset for each found file,
+        # but for a simple list, we'll manage it outside if needed, or just use a timestamp.
+        # For this logic, a simple timestamped name is safest.
+        
+        echo "----------------------------------------------------"
+        echo "Transcribing Voice Memo: ${AUDIO_FILE##*/}"
+
+        BASENAME="${AUDIO_FILE##*/}"
+        # Use a timestamp to guarantee a unique name
+        TIMESTAMP=$(date +"%Y%m%d-%H%M%S")
+        NEW_TRANSCRIPT_NAME="mary-voice-note-${TIMESTAMP}"
+        
+        TEMP_WAV_FILE="$RECORDINGS_FOLDER/$NEW_TRANSCRIPT_NAME.wav"
+
+        echo "  --> Step A: Converting to compatible WAV format..."
+        if ffmpeg -i "$AUDIO_FILE" -ar 16000 -ac 1 -c:a pcm_s16le "$TEMP_WAV_FILE" -hide_banner -loglevel error; then
+            echo "  --> Step B: Transcribing WAV..."
+            if whisper-cli -m "$MODEL_PATH" -f "$TEMP_WAV_FILE" -otxt -of "$TRANSCRIPTS_FOLDER/$NEW_TRANSCRIPT_NAME"; then
+                echo "  --> SUCCESS: Transcription complete. Transcript saved as '$NEW_TRANSCRIPT_NAME.txt'"
+                echo "  --> Step C: Moving original Voice Memo to 'completed'..."
+                mv "$AUDIO_FILE" "$COMPLETED_FOLDER/voice-memo-${TIMESTAMP}.m4a"
+            else
+                echo "  !!! ERROR: Transcription failed for '$BASENAME'. Original file will not be moved. !!!"
+            fi
+            echo "  --> Step D: Cleaning up temporary file..."
+            rm "$TEMP_WAV_FILE"
+        else
+            echo "  !!! ERROR: Failed to convert '$BASENAME'. Skipping this file. It may be corrupt or empty. !!!"
+        fi
+    done
+fi
+echo "--- Voice Memo processing complete. ---"
+
+# ===================================================================
+
+echo ""
+echo "Batch process finished."

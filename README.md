@@ -1,6 +1,6 @@
 # Audio Transcription Automation for macOS
 
-A shell script to automate the local transcription of audio files on macOS using the powerful `whisper.cpp` engine.
+A robust shell script to automate the local transcription of audio files on macOS using the powerful `whisper.cpp` engine.
 
 Created with a little help from a general AI.
 
@@ -10,23 +10,30 @@ This script was designed for my private use on a local computer. I wanted to avo
 
 ## Features
 
-* **Batch Processing:** Transcribes all `.m4a` and `.mp3` files found in a source folder.
-* **Automated Workflow:**
+* **Multi-Source Processing:** Automatically processes audio files from three distinct locations:
+    1.  Named subfolders within a `new-zoom` directory.
+    2.  Loose audio files dropped into a main `_recordings` folder.
+    3.  The system's official macOS **Voice Memos** database.
+* **Intelligent Naming:** Creates clean, sequentially numbered transcripts (e.g., `Meeting-Name-1.txt`, `Meeting-Name-2.txt`) for multi-part recordings from a single source folder.
+* **Robust Error Handling:**
+    * Skips corrupt, empty, or unreadable audio files and prints a clear error.
+    * If a folder with multiple audio files is only partially processed, it leaves the original folder in place for manual review.
+    * Correctly handles filenames that contain spaces or special characters.
+* **Automated File Management:**
     * Saves `.txt` transcripts to a dedicated `transcripts` folder.
-    * Moves successfully processed audio files to a `completed` folder to prevent re-transcription.
-* **Zoom Pre-processing:** Automatically finds specially-named Zoom recording folders, renames the audio file to match the folder's name, and prepares it for transcription.
-* **Duplicate Handling:** If a file with the same name already exists, it adds the current date to the filename to prevent overwriting.
+    * Moves successfully processed audio files and their parent folders to a `completed` folder to prevent re-transcription, preserving the original folder structure.
 
 ## Required Folder Structure
 
-For the script to work, it assumes the following folder structure exists within your user's `Dropbox` directory:
+For the script to work, it assumes the following folder structure exists within your user's `Dropbox` directory. Additionally, it reads directly from the system's Voice Memos folder.
 
-* **`~/Dropbox/`**
-    * **`_recordings/`**
-        * `completed/`      <-- Processed original audio files are moved here.
-        * `new-zoom/`       <-- Drop Zoom recording folders here for pre-processing.
-        * `transcripts/`    <-- Final .txt transcripts are saved here.
-        * *(Place other .m4a and .mp3 files here for processing)*
+* **`~/Dropbox/_recordings/`**
+    * `completed/`      <-- Processed original audio files & folders are moved here.
+    * `new-zoom/`       <-- Drop named Zoom recording folders here for pre-processing.
+    * `transcripts/`    <-- Final .txt transcripts are saved here.
+    * *(Place other loose .m4a and .mp3 files here for processing)*
+* **`~/Library/Group Containers/group.com.apple.VoiceMemos.shared/Recordings/`**
+    * *(This is the system location the script reads new Voice Memos from)*
 
 ## Requirements
 
@@ -47,7 +54,13 @@ For the script to work, it assumes the following folder structure exists within 
     brew install whisper-cpp ffmpeg
     ```
 
-3.  **Download a Transcription Model:** The script is configured to use the `base.en` (English) model. You must download it once.
+3.  **Grant Full Disk Access (CRITICAL for Voice Memos):** To allow the script to read the protected Voice Memos folder, you must grant Full Disk Access to your Terminal app.
+    * Open **System Settings** > **Privacy & Security** > **Full Disk Access**.
+    * Click the **+** button, navigate to `Applications/Utilities`, select **Terminal.app**, and click Open.
+    * Ensure the switch next to Terminal is turned on.
+    * **You must quit and restart your Terminal for this change to take effect.**
+
+4.  **Download a Transcription Model:** The script is configured to use the `base.en` (English) model. You must download it once.
     ```bash
     # Create a place to store the models in your home directory
     mkdir -p ~/whisper-files/models
@@ -58,12 +71,12 @@ For the script to work, it assumes the following folder structure exists within 
 
 ## Usage
 
-1.  Save the script from this repository as `transcribe.sh` in your user home directory (`~/`).
+1.  Save the `transcribe.sh` script from this repository into your user home directory (`~/`).
 2.  Open your terminal and make the script executable with this one-time command:
     ```bash
     chmod +x ~/transcribe.sh
     ```
-3.  Place your audio files in the appropriate folders (`_recordings` or `_recordings/new-zoom`).
+3.  Place your audio files in the appropriate folders (`_recordings`, `new-zoom`, or create a new Voice Memo).
 4.  Run the script from your terminal:
     ```bash
     ~/transcribe.sh
